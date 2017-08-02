@@ -1,9 +1,7 @@
-# mby göra om till coffee...
-#https = require('https')
 _ = require 'lodash'
 ch = require 'chalk'
 
-Ichimoku = require './ichimoku'
+Ichimoku = require('./ichimoku')
 
 init = (context)->
 	context.ichi = new Ichimoku()
