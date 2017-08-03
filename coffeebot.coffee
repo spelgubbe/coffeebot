@@ -1,118 +1,12 @@
 _ = require 'lodash'
-ch = require 'chalk'
 
-Ichimoku = require('./ichimoku')
+Ichimoku = require './ichimoku'
+log = require './logging'
 
-init = (context)->
-	context.ichi = new Ichimoku()
-	context.init = true
-	context.pos = null
-
-	###
-	UPTREND SETTINGS:
-		context.open = 7.0
-		context.close = 3.5
-
-		context.open = 4.0
-		context.close = 5.0
-								två nedersta bäst
-		context.open = 4.0
-		context.close = 6.0
-
-	DOWNTREND SETTINGS:
-		context.open = 0.2
-		context.close = 0.5
-	###
-	context.open = 0.2
-	context.close = 0.5
-handle = (context, data)->
-	# data object provides access to the current candle (ex. data['btc_usd'].close)
-	#instrument = @data.instruments['btc_usd'] # tydligen fanns data i en klass (this.data), men inte i denna bot atm
-	instrument = data.instruments[context.instrument]
-	# TYDLIGEN
-	# så fungerar det så här
-	# instrument fylls med hundratals värden (vid uppstart av skriptet är length=498)
-	# i detta skript behövs dock bara kijun_n antal aka 26 i detta fall
-	# bara hämta mer från cryptowatch
-	# handle körs varje 1h (eller perioden man angett)
-
-	# init körs endast en gång under skriptets livstid
-	if context.init # detta if-sats körs endast 1 gång
-		for i in [0...instrument.close.length]
-			t =
-				open: instrument.open[..i]
-				close: instrument.close[..i]
-				high: instrument.high[..i]
-				low: instrument.low[..i]
-			context.ichi.put(t)
-		context.init = false
-	context.ichi.put(instrument)
-	c = context.ichi.current()
-
-
-	# short term (hh+ll)/2 -  long term......
-	diff = 100 * ((c.tenkan - c.kijun) / ((c.tenkan + c.kijun)/2))
-	diff = Math.abs(diff)
-
-	# lägsta värdet för (hh+ll)/2 under de senaste 26 perioderna (lägsta mellan)
-	min_tenkan = _.min([c.tenkan, c.kijun])
-	# största värdet för (hh+ll)/2 under de senaste 26 perioderna (lägsta mellan)
-	max_tenkan = _.max([c.tenkan, c.kijun])
-
-	min_senkou = _.min([c.senkou_a, c.senkou_b])
-	max_senkou = _.max([c.senkou_a, c.senkou_b])
-
-	min_lag = _.min([c.lag_senkou_a, c.lag_senkou_b])
-	max_lag = _.max([c.lag_senkou_a, c.lag_senkou_b])
-
-	# Tenkan = short term price
-	# Kijun = long(er) term price
-	if diff >= context.open 						# determine if it's a profitable enough buy
-		# short term > long term && 
-		if c.tenkan > c.kijun and min_tenkan > max_senkou and c.chikou > max_lag
-			context.pos = 'long'
-		else if c.tenkan < c.kijun and max_tenkan < min_senkou and c.chikou < min_lag
-			context.pos = 'short'
-	
-	if diff >= context.close 						# profitable enough sell
-		if context.pos == 'short' and c.tenkan > c.kijun # short term > long term
-			context.pos = 'long'
-		else if context.pos == 'long' and c.tenkan < c.kijun # short term < long term
-			context.pos = 'short'
-	if context.pos == 'long'
-		#cash = @portfolio.positions[instrument.base()].amount
-		#if cash > 15
-			#trading.buy(instrument, 'market', Math.round(1000*cash/instrument.price - 1)/1000)
-		positivePrint(context.exchange + ' ' +context.instrument.toUpperCase()+':BUY')
-	else if context.pos == 'short'
-		#asset = @portfolio.positions[instrument.asset()].amount
-		#if asset > 0.2
-			#trading.sell(instrument, 'market', asset)
-		negativePrint(context.exchange + ' ' +context.instrument.toUpperCase()+':SELL')
-
-
-# END ICHI CLASS + FUNCTIONS
-
-functionPrint = (string) ->
-	console.log((new Date()).toLocaleString() + ': ' + string)
-
-positivePrint = (string) ->
-	functionPrint(ch.green(string))
-
-negativePrint = (string) ->
-	functionPrint(ch.red(string))
 
 makeRequest = (protocol, hostStr, pathStr) ->
 	new Promise((resolve) ->
 		obj = ''
-
-		###let options = {
-				host:hostStr,
-				path:pathStr,
-				//method:"POST",
-				//headers:{"Cookie":"JSESSIONID="+token}
-		};
-		###
 
 		url = api + pathStr
 		https = require(protocol)
@@ -121,30 +15,13 @@ makeRequest = (protocol, hostStr, pathStr) ->
 			str = ''
 			response.on 'data', (chunk) ->
 				str += chunk
-				return
+
 			response.on 'end', ->
 				obj = JSON.parse(str)
 				resolve obj
-				return
-			return
 
 		https.request(url, callback).end()
-		#request.write('{"id":"ID","method":"'+ method +'","params":{},"jsonrpc":"2.0"}');
-		#request.end();
-		return
 )
-
-timeToISO = (time) ->
-	new Date(time).toISOString()
-
-timeToUTC = (time) ->
-	new Date(time).toUTCString()
-
-epochToISO = (epochtime) ->
-	new Date(epochtime * 1000).toISOString()
-
-epochTimeMS = ->
-	new Date().getTime()
 
 epochTime = ->
 	Math.floor new Date().getTime() / 1000
@@ -174,7 +51,7 @@ candleToObj = (candle) ->
 	candleObj
 
 candlesToObj = (fCandles) ->
-	# OHLC format open high low close
+	# OHLC format open high low close (volume)
 	candles = []
 	i = 0
 	while i < fCandles.length
@@ -221,14 +98,12 @@ toLocalTime = (time) ->
 
 	return d.toLocaleString()
 
-handle_data = (arr, context, data) ->
+handleData = (arr, context, data) ->
 	i = 0
 
 	finished = getFinishedCandles(arr, 30)
-	console.log 'Current time', (new Date()).toLocaleString()
-	#console.log 'Finished candles:', finished.length
-	#console.log 'Latest candle', context.instrument.toUpperCase()
-	console.log 'Candle time ' + context.pairString.toUpperCase() + ':', toLocalTime(candleToObj(getLatestFinishedCandle(arr, 30)).time)
+	#console.log 'Current time', (new Date()).toLocaleString()
+	#console.log 'Candle time ' + context.pairString.toUpperCase() + ':', toLocalTime(candleToObj(getLatestFinishedCandle(arr, 30)).time)
 	fCandleObjArr = candlesToObj(finished)
 
 	k = 0
@@ -241,35 +116,51 @@ handle_data = (arr, context, data) ->
 		k++
 
 	instrument = data.instruments[context.instrument]
-	#console.log('körs detta?') # ja
-	#console.log instrument#.push(candlesToObj(finished))
-	#console.log('test', instrument.close[-26..]) # ichi test...
-	#console.log data.btc_usd
-	handle(context, data)
+
+	Ichimoku.handle(context, data)
 
 
-runBot = (protocol, api, path, context, data) ->
+runBot = (protocol, api, periodTime, path, context, data) ->
 	makeRequest(protocol, api, path).then (array) ->
-		# here is what you want
-		#console.log array['result']['3600']
-		handle_data(array['result']['3600'], context, data)
-		#console.log '"gas" left for this hour = ' + Math.floor(Math.floor(array['allowance']['remaining'] / 1000000) / 40) + '%'
-		#console.log data.instruments[0]
 
-protocol = 'https'
-api = 'https://api.cryptowat.ch'
+		lastPosition = if context.pos != null then context.pos.substr() else null
+		
+		handleData(array['result'][periodTime.toString()], context, data)
+		#console.log '"gas" left for this hour = ' + Math.floor(Math.floor(array['allowance']['remaining'] / 1000000) / 40) + '%'
+		if lastPosition != context.pos and lastPosition != null
+			if context.pos == 'short'
+				log.mad(context.exchange, context.instrument, 'position changed - short')
+			else
+				log.happy(context.exchange, context.instrument, 'position changed - long')
+		else
+			if context.pos == 'short'
+				log.mad(context.exchange, context.instrument, 'SHORT')
+			else if context.pos == 'long'
+				log.happy(context.exchange, context.instrument, 'LONG')
+
+
 
 arrlen = 500
 
 data = 
 	instruments:
+		# this needs to be automated ......
+
+		# BTC PAIRS
 		'btc_usd':
 			open: Array(arrlen)
 			high: Array(arrlen)
 			low: Array(arrlen)
 			close: Array(arrlen)
 			volume: Array(arrlen)
-
+		'btc_eur':
+			open: Array(arrlen)
+			high: Array(arrlen)
+			low: Array(arrlen)
+			close: Array(arrlen)
+			volume: Array(arrlen)
+		
+		# ETH PAIRS
 		'eth_usd':
 			open: Array(arrlen)
 			high: Array(arrlen)
@@ -282,12 +173,6 @@ data =
 			low: Array(arrlen)
 			close: Array(arrlen)
 			volume: Array(arrlen)
-		'btc_eur':
-			open: Array(arrlen)
-			high: Array(arrlen)
-			low: Array(arrlen)
-			close: Array(arrlen)
-			volume: Array(arrlen)
 		'eth_btc':
 			open: Array(arrlen)
 			high: Array(arrlen)
@@ -295,11 +180,32 @@ data =
 			close: Array(arrlen)
 			volume: Array(arrlen)
 
+		# LTC PAIRS
+		'ltc_usd':
+			open: Array(arrlen)
+			high: Array(arrlen)
+			low: Array(arrlen)
+			close: Array(arrlen)
+			volume: Array(arrlen)
+		'ltc_eur':
+			open: Array(arrlen)
+			high: Array(arrlen)
+			low: Array(arrlen)
+			close: Array(arrlen)
+			volume: Array(arrlen)
+		'ltc_btc':
+			open: Array(arrlen)
+			high: Array(arrlen)
+			low: Array(arrlen)
+			close: Array(arrlen)
+			volume: Array(arrlen)
 
 
+protocol = 'https'
+api = 'https://api.cryptowat.ch'
 
-instrumentsToTrade = ['eth_usd', 'eth_btc', 'btc_usd']
-exchanges = ['poloniex', 'poloniex', 'poloniex']
+instrumentsToTrade = ['btc_usd','eth_usd', 'ltc_usd', 'eth_btc', 'ltc_btc']
+exchanges = ['poloniex', 'poloniex', 'poloniex', 'poloniex', 'poloniex']
 
 periodTime = 3600
 lagSeconds = 30
@@ -322,10 +228,9 @@ while j < instrumentsToTrade.length
 	context.pairString = context.pair.join('')
 
 	context.path = '/markets/' + context.exchange + '/' + context.pairString + '/ohlc?periods=' + periodTime + '&after=' + firstRunTimeFilter
-	console.log(context.path)
 
-	init(context)
-	runBot(protocol, api, context.path, context, data)
+	Ichimoku.init(context)
+	runBot(protocol, api, periodTime, context.path, context, data)
 
 	j++
 
@@ -342,11 +247,11 @@ setInterval((->
 		while k < instrumentsToTrade.length
 			context = contexts[k]
 			context.path = '/markets/' + context.exchange + '/' + context.pairString + '/ohlc?periods=' + periodTime + '&after=' + timefilter
-			runBot(protocol, api, context.path, context, data)
-			console.log('Ran bot with:',context.instrument)
+			runBot(protocol, api, periodTime, context.path, context, data)
+			#console.log('Ran bot with:',context.instrument)
 			k++
 	else if (hasRun && now.getMinutes() > 0)
-		# change hasRun to
+		
 		hasRun = false
 		)
 , millisecondsToWait)
