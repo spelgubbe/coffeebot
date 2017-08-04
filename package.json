@@ -5,13 +5,11 @@
   "main": "coffeebot.coffee",
   "dependencies": {
     "chalk": "^2.0.1",
-    "forever": "^0.15.3",
     "lodash": "^4.17.4"
   },
   "devDependencies": {},
   "scripts": {
     "start": "coffee coffeebot.coffee",
-    "start-forever": "forever -c coffee coffeebot.coffee",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
